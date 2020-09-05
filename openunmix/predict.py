@@ -1,7 +1,8 @@
 import argparse
 import torchaudio
 import torch
-import model
+from openunmix import model
+from openunmix import filtering
 from openunmix import utils
 
 
@@ -37,6 +38,9 @@ class Session:
             fade_out_len=int(fade_len * self.model_rate),
             fade_shape='logarithmic'
         )
+
+        # creating a last request list
+        self.last_request = None
 
     def extract(
         self,
@@ -75,6 +79,9 @@ class Session:
             self.audio[1+index_in_model, :, start_sample:stop_sample] += faded_target
             # remove from mixture
             self.audio[0, :, start_sample:stop_sample] -= faded_target
+        """
+        # saving request as last
+        self.last_request = [targets, start, stop]"""
 
 
     def refine(
@@ -104,34 +111,98 @@ class Session:
 
         # go to 
         # (nb_frames, nb_bins, nb_channels, 1+len(model_targets), complex=2)
-        audio_stft = torch.permute(audio_stft, [3, 2, 1, 0, 4])
-
+        audio_stft = audio_stft.permute(3, 2, 1, 0, 4)
+        
         # (nb_frames, nb_bins, nb_channels, complex=2,
         #  len(models_targets) [+1 if residual])
-        """result = wiener(
+        result = filtering.wiener(
             abs(
-                torch(audio_stft[..., 1:, :]
+                audio_stft[..., 1:, :]
             ),
             audio_stft.sum(dim=-2),
             niter,
             softmask=False,
             residual=use_residual
-        )"""
-
+        )
+        result = result.permute(4, 2, 1, 0, 3 )
+        #  in istft (nb_samples, nb_channels, nb_bins, nb_frames, complex=2)
+        # out istft (nb_samples, nb_channels, nb_timesteps)
         # compute inverse STFT and store result
-        self.audio[0, :, start_sample] += (
+        self.audio[0:, :, start_sample:stop_sample] += (
             model.istft(
-                result[..., -1],
+                result[-1:],
                 n_fft=n_fft, n_hop=n_hop, center=True,
-                length=self.audio.shape[-1]
+                length=stop_sample - start_sample
             ) if use_residual
             else 0.
         )
-        self.audio[1:] += model.istft(
-            result[..., :len(self.model_targets)],
+        self.audio[1:, :, start_sample:stop_sample] += model.istft(
+            result[:len(self.model_targets)],
             n_fft=n_fft, n_hop=n_hop, center=True,
-            length=self.audio.shape[-1]
+            length=stop_sample - start_sample
         )
+"""
+    def refine_last(
+            self,
+            niter=1,
+            use_residual=True,
+            n_fft = 4096,
+            n_hop = 1024):
+        if self.last_request is None: 
+            print("no last request")
+        else:
+            # get last request data
+            targets, start, stop = self.last_request
+
+            # get excerpt to process
+            start_sample = int(start * self.model_rate)
+            stop_sample = -1 if stop is None else int(stop * self.model_rate)
+            excerpt = self.fader(
+                self.audio[..., start_sample:stop_sample]
+            )
+            # remove it from the current audio data
+            self.audio[..., start_sample:stop_sample] -= excerpt
+
+            # prepare the STFT object
+            transform = model.STFT(n_fft=n_fft, n_hop=n_hop, center=True)
+            abs = model.ComplexNorm(mono=self.audio.shape[1]==1)
+
+            # apply it, get
+            # (1+len(model_targets), nb_channels, nb_bins, nb_frames, complex=2)
+            audio_stft = transform(excerpt)
+
+            # go to 
+            # (nb_frames, nb_bins, nb_channels, 1+len(model_targets), complex=2)
+            audio_stft = audio_stft.permute(3, 2, 1, 0, 4)
+            
+            # (nb_frames, nb_bins, nb_channels, complex=2,
+            #  len(models_targets) [+1 if residual])
+            result = filtering.wiener(
+                abs(
+                    audio_stft[..., 1:, :]
+                ),
+                audio_stft.sum(dim=-2),
+                niter,
+                softmask=False,
+                residual=use_residual
+            )
+            result = result.permute(4, 2, 1, 0, 3 )
+            #  in istft (nb_samples, nb_channels, nb_bins, nb_frames, complex=2)
+            # out istft (nb_samples, nb_channels, nb_timesteps)
+            # compute inverse STFT and store result
+            self.audio[0:, :, start_sample:stop_sample] += (
+                model.istft(
+                    result[-1:],
+                    n_fft=n_fft, n_hop=n_hop, center=True,
+                    length=stop_sample - start_sample
+                ) if use_residual
+                else 0.
+            )
+            self.audio[1:, :, start_sample:stop_sample] += model.istft(
+                result[:len(self.model_targets)],
+                n_fft=n_fft, n_hop=n_hop, center=True,
+                length=stop_sample - start_sample
+            )"""
 
 
 def inference_args(parser):
