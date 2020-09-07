@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 import torchaudio
 import predict
+import sessions
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -25,15 +26,14 @@ if __name__ == '__main__':
     mixture, rate = torchaudio.load(mixture_path)
     
 
-    # create session object
-    session = predict.Session(
-        mixture,
-        rate,
-        model_targets,
+    config, audio = sessions.init(
+        mixture, # mixture signal ndarray
+        rate, # sampling rate for the mixture
+        model_targets, # list of str: targets handled by the model
         model_str_or_path="umxhq",
-        model_rate=44100.,
-        fade_len=0.025,
-        device='cpu',
+        model_rate=44100, # sampling rate for the model
+        fade_len=0.025, # duration of fade-in/out
+        device='cpu'
     )
 
     ##### tests : ORDER bass, drums, vocals
@@ -49,14 +49,17 @@ if __name__ == '__main__':
     for i, test in enumerate(test_values):
         targets, start, stop = test  
         if targets is None :
-            session.refine(
+            config, audio = sessions.refine(
+                config,
+                audio
                 niter=1,
                 use_residual=True,
                 start=start, stop=stop,
             )
         else : 
             # run extract method
-            session.extract(
+            config, audio = sessions.extract(
+                config, audio,
                 targets=targets,
                 start=start,
                 stop=stop)
