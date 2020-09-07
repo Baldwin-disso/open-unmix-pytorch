@@ -3,6 +3,8 @@ from pathlib import Path
 import torchaudio
 import predict
 import sessions
+import torch
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -12,7 +14,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--mixture-path',
         type=str,
-        default='/home/baldo/work/source_separation/debug_data/session_test/weblabla.wav',
+        default='/home/antoine/data/audio/1960s/Darling Baby - The Elgins-tSan37Algcg.wav',
         help='root path of dataset'
     ) 
     args, _ = parser.parse_known_args()
@@ -21,10 +23,10 @@ if __name__ == '__main__':
     # parsing path
     mixture_path = Path(args.mixture_path)
     mixture_name = mixture_path.stem
-    out_path = mixture_path.parent
+    out_path = '.'
     # load audio
     mixture, rate = torchaudio.load(mixture_path)
-    
+    mixture = mixture[:, :rate*31]
 
     config, audio = sessions.init(
         mixture, # mixture signal ndarray
@@ -39,10 +41,10 @@ if __name__ == '__main__':
     ##### tests : ORDER bass, drums, vocals
     # test of extract 
     test_values  = [
-        [ ['bass', 'drums'], 0.0 , 0.5  ],
-        [ ['bass', 'drums'], 3.0 , 5.0  ],
-        [ ['bass', 'drums', 'vocals'], 0.6 , 3.0  ],
-        [None, 0.0, 5.0  ]
+        [ ['bass', 'drums'], 0.0 , 5.  ],
+        [ ['drums', 'bass'], 3.0 , 15.0  ],
+        [ ['bass', 'drums', 'vocals'], 15 , 30  ],
+        [None, 0.0, None  ]
     ]
     
    
@@ -51,19 +53,26 @@ if __name__ == '__main__':
         if targets is None :
             config, audio = sessions.refine(
                 config,
-                audio
+                audio,
                 niter=1,
-                use_residual=True,
+                use_residual=False,
                 start=start, stop=stop,
             )
         else : 
             # run extract method
             config, audio = sessions.extract(
-                config, audio,
+                config=config, audio=audio,
                 targets=targets,
                 start=start,
                 stop=stop)
         #  save 
-        torchaudio.save(str(Path(out_path,'session_' + mixture_name + '_mix_' + str(i) + '.mp3')), session.audio[0], rate)
+        audio_torch = torch.as_tensor(audio)
+        torchaudio.save(
+            str(Path(out_path,'session_' + mixture_name + '_mix_' + str(i) + '.mp3')),
+            torch.clamp(audio_torch[0], -1, 1),
+            rate)
         for j, t in enumerate(model_targets):
-            torchaudio.save(str(Path(out_path,'session_' + mixture_name + '_'  + t + '_'  + str(i) + '.mp3')), session.audio[j+1], rate)
+            torchaudio.save(
+                str(Path(out_path,'session_' + mixture_name + '_'  + t + '_'  + str(i) + '.mp3')),
+                torch.clamp(audio_torch[j+1],-1,1),
+                rate)

@@ -19,7 +19,7 @@ def init(
     # preparing audio of session
     mixture = utils.preprocess(mixture, rate, model_rate)
     audio = np.zeros(
-        (len(self.model_targets)+1, *mixture.shape[1:]),
+        (len(model_targets)+1, *mixture.shape[1:]),
     )
     audio[0] = mixture.numpy()
 
@@ -27,7 +27,7 @@ def init(
         'model_str_or_path': model_str_or_path,
         'model_targets': model_targets,
         'model_rate': model_rate,
-        'device': device
+        'device': device,
         'fade_len': fade_len,
         'processed_targets': set()
     }
@@ -50,7 +50,7 @@ def extract(
     separator.freeze()
 
     # send to torch and device
-    audio = torch.as_tensor(audio, device=config['device'])
+    audio = torch.as_tensor(audio, device=config['device'], dtype=torch.float32)
 
     # creating a fader
     fader = torchaudio.transforms.Fade(
@@ -61,25 +61,24 @@ def extract(
 
     # get window to process
     start_sample = int(start * config['model_rate'])
-    stop_sample = -1 if stop is None else int(stop * config['model_rate'])
+    stop_sample = audio.shape[-1] if stop is None else int(stop * config['model_rate'])
 
     # getting the extracted signals applied on the mixture
     extracted = separator(
         audio[None, 0, :, start_sample:stop_sample]
     )[0]
-
-    for index, target in enumerate(targets):
+    #import matplotlib.pylab as plt
+    for index, target in enumerate(separator.target_models.keys()):
         # add estimate to each target and remove from mix
-        assert (
-            target in config['model_targets'],
+        assert target in config['model_targets'],\
             "Target %s must be in model_targets %s" % (
                 target, config['model_targets'])
-        )
-        index_in_model = config['model_targets'].index(target)
+
+        index_in_audio = config['model_targets'].index(target)
         faded_target = fader(extracted[index])
 
         # add to target waveform
-        audio[1+index_in_model, :, start_sample:stop_sample] += faded_target
+        audio[1+index_in_audio, :, start_sample:stop_sample] += faded_target
         # remove from mixture
         audio[0, :, start_sample:stop_sample] -= faded_target
     
@@ -98,8 +97,8 @@ def refine(
         n_hop = 1024):
 
     # get excerpt to process
-    start_sample = int(start * self.model_rate)
-    stop_sample = -1 if stop is None else int(stop * self.model_rate)
+    start_sample = int(start * config['model_rate'])
+    stop_sample = audio.shape[-1] if stop is None else int(stop * config['model_rate'])
 
     # creating a fader
     fader = torchaudio.transforms.Fade(
@@ -110,14 +109,14 @@ def refine(
 
     # don't select the targets that have not been processed
     selected_indexes = [0,] + [
-        index+1 for (index, target) in enumerate(config['model_targets']
-        if target in config['processed_targets'])]
+        index+1 for (index, target) in enumerate(config['model_targets'])
+        if target in config['processed_targets']]
     n_selected = len(selected_indexes)
 
     # get the excerpt for the selected targets + mixture
     excerpt = torch.as_tensor(
         audio[selected_indexes, :, start_sample:stop_sample],
-        device=device
+        device=config['device']
     )
 
     # apply the fader
@@ -154,7 +153,6 @@ def refine(
     # go to (n_selected, nb_channels, nb_bins, nb_frames, complex=2) (in stft)
     audio_stft = audio_stft.permute(4, 2, 1, 0, 3 )
 
-
     audio_wave = model.istft(
             audio_stft,
             n_fft=n_fft, n_hop=n_hop, center=True,
@@ -166,7 +164,7 @@ def refine(
         # if we use residual: update the first element from audio
         audio[0,:,start_sample:stop_sample] += audio_wave[0]
         pos = 1
-    audio[1:, :, start_sample, stop_sample] += audio_wave[pos:]
+    audio[1:, :, start_sample:stop_sample] += audio_wave[pos:]
 
     return config, audio
 
