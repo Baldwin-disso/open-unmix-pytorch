@@ -95,7 +95,7 @@ def refine(
         start=0, stop=None,
         n_fft = 4096,
         n_hop = 1024):
-
+    #import pdb; pdb.set_trace()
     # get excerpt to process
     start_sample = int(start * config['model_rate'])
     stop_sample = audio.shape[-1] if stop is None else int(stop * config['model_rate'])
@@ -121,9 +121,12 @@ def refine(
 
     # apply the fader
     excerpt = fader(excerpt)
+    # keep current excerpt 
+    old_excerpt = excerpt.cpu().numpy()
 
     # remove it from the current audio data
     audio[selected_indexes, :, start_sample:stop_sample] -= excerpt.cpu().numpy()
+
 
     # prepare the STFT object
     transform = model.STFT(n_fft=n_fft, n_hop=n_hop, center=True)
@@ -159,6 +162,12 @@ def refine(
             length=stop_sample - start_sample
         ).cpu().numpy()
 
+    # normalize audio_wave to fit excerpt
+    f = (((old_excerpt**2).sum())/((audio_wave**2).sum()))**(1/2)
+    audio_wave *= f 
+    print('factor_used' + str(f))
+
+    # update audio
     pos = 0
     if use_residual:
         # if we use residual: update the first element from audio
