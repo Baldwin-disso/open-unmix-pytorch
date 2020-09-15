@@ -5,16 +5,20 @@ from openunmix import model
 from openunmix import filtering
 from openunmix import utils
 import numpy as np
+from pathlib import Path
+import json
 
 
 def init(
+    session_path, # path for the new session
     mixture, # mixture signal ndarray
     rate, # sampling rate for the mixture
     model_targets, # list of str: targets handled by the model
     model_str_or_path="umxhq",
     model_rate=44100, # sampling rate for the model
     fade_len=0.025, # duration of fade-in/out
-    device='cpu'
+    device='cpu',
+    audio_format='mp3'
 ):
     # preparing audio of session
     mixture = utils.preprocess(mixture, rate, model_rate)
@@ -29,9 +33,49 @@ def init(
         'model_rate': model_rate,
         'device': device,
         'fade_len': fade_len,
-        'processed_targets': set()
+        'processed_targets': set(),
+        'format': audio_format
     }
+    # saves
+    save(config, audio, session_path)
+
+
+def save(config, audio, session_path):
+    # saving the session config to specified path
+
+    with open(Path(session_path, "config.json"), "w") as out:
+        out.write(json.dumps(config, indent=4, sort_keys=True))
+
+    # saving audio
+    audio = torch.as_tensor(audio)
+    audio = torch.clamp(audio, -1, 1)
+    targets = ['mixture'] + config['model_targets']
+    for index, target in enumerate(targets):
+        target_path = str(
+                Path(session_path, target, + '.' + config['audio_format'])
+        )
+        torchaudio.save(target_path, audio[index], config['model_rate'])
+
+
+def load(session_path):
+    with open(Path(session_path, "config.json"), "r") as handle:
+        config = json.load(handle)
+
+    # loading audio
+    audio = []
+    targets = ['mixture'] + config['model_targets']
+    for target in targets:
+        target_path = str(
+                Path(session_path, target, + '.' + config['audio_format'])
+        )
+        audio += [torchaudio.load(target_path)]
+
+    duration = max([target_audio.shape[-1] for target_audio in audio])
+    audio = [target_audio[..., :duration] for target_audio in audio]
+    audio = torch.stack(audio)
+
     return config, audio
+
 
 def extract(
     config,
