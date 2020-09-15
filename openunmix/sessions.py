@@ -33,8 +33,8 @@ def init(
         'model_rate': model_rate,
         'device': device,
         'fade_len': fade_len,
-        'processed_targets': set(),
-        'format': audio_format
+        'processed_targets': [],
+        'audio_format': audio_format
     }
     # saves
     save(config, audio, session_path)
@@ -42,7 +42,7 @@ def init(
 
 def save(config, audio, session_path):
     # saving the session config to specified path
-
+    Path(session_path).mkdir(parents=True, exist_ok=True )
     with open(Path(session_path, "config.json"), "w") as out:
         out.write(json.dumps(config, indent=4, sort_keys=True))
 
@@ -52,7 +52,7 @@ def save(config, audio, session_path):
     targets = ['mixture'] + config['model_targets']
     for index, target in enumerate(targets):
         target_path = str(
-                Path(session_path, target, + '.' + config['audio_format'])
+                Path(session_path, target + '.' + config['audio_format'])
         )
         torchaudio.save(target_path, audio[index], config['model_rate'])
 
@@ -66,10 +66,10 @@ def load(session_path):
     targets = ['mixture'] + config['model_targets']
     for target in targets:
         target_path = str(
-                Path(session_path, target, + '.' + config['audio_format'])
+                Path(session_path, target + '.' + config['audio_format'])
         )
-        audio += [torchaudio.load(target_path)]
-
+        audio += [torchaudio.load(target_path)[0]]
+    #import ipdb; ipdb.set_trace()
     duration = max([target_audio.shape[-1] for target_audio in audio])
     audio = [target_audio[..., :duration] for target_audio in audio]
     audio = torch.stack(audio)
@@ -126,7 +126,7 @@ def extract(
         # remove from mixture
         audio[0, :, start_sample:stop_sample] -= faded_target
     
-    config['processed_targets'] = config['processed_targets'].union(targets)
+    config['processed_targets'] = list(set(config['processed_targets']).union(set(targets)))
 
     return config, audio.cpu().numpy()
 
@@ -209,7 +209,7 @@ def refine(
     # normalize audio_wave to fit excerpt
     f = (((old_excerpt**2).sum())/((audio_wave**2).sum()))**(1/2)
     audio_wave *= f 
-    print('factor_used' + str(f))
+    
 
     # update audio
     pos = 0
