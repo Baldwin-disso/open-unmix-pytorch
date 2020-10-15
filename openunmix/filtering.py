@@ -6,9 +6,15 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import DataLoader
+import math
 
 # Define basic complex operations on torch.Tensor objects whose last dimension
 # consists in the concatenation of the real and imaginary parts.
+
+def my_atan2(y,x):
+    res = 2 * torch.atan( y / ( (x**2 + y**2 )**(0.5) + x ) ) 
+    res[res.isnan()] = math.pi
+    return res
 
 
 def _norm(x: torch.Tensor) -> torch.Tensor:
@@ -472,6 +478,8 @@ def wiener(
         # otherwise, we just multiply the targets spectrograms with mix phase
         # we tacitly assume that we have magnitude estimates.
         angle = torch.atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
+        my_angle = my_atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
+        #angle = torch.atan(mix_stft[..., 1]/mix_stft[..., 0])[..., None]
         nb_sources = targets_spectrograms.shape[-1]
         y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
                         device=mix_stft.device)

@@ -8,11 +8,19 @@ import json
 
 if __name__ == '__main__':
     # Path
+    # specki
+    """
     original_mixture_path = Path((
         "/media/speckbull/data/"
             "Rolling Stone Magazine's 500 Greatest Songs Of All Time/"
                 "001-100/"
                     "002 - The Rolling Stones - Satisfaction (1965).flac"))
+    """
+    # saybi
+    original_mixture_path = Path((
+    "/home/baldwin/work/data/songs/satisfaction.mp3"))
+
+
     start = 5.0
     duration = 30.0
     #import ipdb; ipdb.set_trace()

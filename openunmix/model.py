@@ -6,6 +6,9 @@ import torch.nn.functional as F
 import torchaudio
 from torch import Tensor
 from torch.nn import LSTM, BatchNorm1d, Linear, Parameter
+from asteroid.filterbanks.enc_dec import Filterbank, Encoder, Decoder
+from asteroid.filterbanks import STFTFB
+from asteroid.filterbanks.transforms import take_mag
 
 from . filtering import wiener
 
@@ -305,7 +308,6 @@ class OpenUnmix(nn.Module):
         x = x.reshape(nb_frames, nb_samples, self.hidden_size)
         # squash range ot [-1, 1]
         x = torch.tanh(x)
-
         # apply 3-layers of stacked LSTM
         lstm_out = self.lstm(x)
 
@@ -376,9 +378,15 @@ class Separator(nn.Module):
         self.residual = residual
         self.softmask = softmask
         self.wiener_win_len = wiener_win_len
-
+        # vo
         self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)
         self.complexnorm = ComplexNorm(mono=nb_channels == 1)
+        # vtrad
+        dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        self.stft2 = Encoder(dft_filters)
+        idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        self.istft2 = Decoder(idft_filters)
+
 
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
@@ -412,8 +420,19 @@ class Separator(nn.Module):
 
         # getting the STFT of mix:
         # (nb_samples, nb_channels, nb_bins, nb_frames, 2)
+        # vo
+        """
         mix_stft = self.stft(audio)
         X = self.complexnorm(mix_stft)
+        """
+        # vtrad
+        
+        mix_stft = self.stft2(audio)
+        mix_stft = torch.reshape(mix_stft, (mix_stft.shape[0],mix_stft.shape[1], 2, -1 ,mix_stft.shape[-1]))
+        mix_stft  = mix_stft.permute(0,1,3,4,2)
+        X = self.complexnorm(mix_stft)
+        
+        
 
         # initializing spectrograms variable
         spectrograms = torch.zeros(
@@ -479,6 +498,8 @@ class Separator(nn.Module):
         targets_stft = targets_stft.permute(0, 5, 3, 2, 1, 4).contiguous()
 
         # inverse STFTs
+        # vo
+        """
         estimates = istft(
             targets_stft,
             n_fft=self.stft.n_fft,
@@ -486,8 +507,12 @@ class Separator(nn.Module):
             window=self.stft.window,
             center=self.stft.center,
             length=audio.shape[-1]
-        )
-
+        )"""
+       
+        # vtrad
+        targets_stft  =  targets_stft.permute(0,1,2,3,5,4)
+        targets_stft = torch.reshape(targets_stft, (targets_stft.shape[0],targets_stft.shape[1],targets_stft.shape[2],-1,targets_stft.shape[-1])  )
+        estimates = self.istft2(targets_stft)
         return estimates
 
     def to_dict(
