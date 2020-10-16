@@ -8,7 +8,9 @@ from torch import Tensor
 from torch.nn import LSTM, BatchNorm1d, Linear, Parameter
 from asteroid.filterbanks.enc_dec import Filterbank, Encoder, Decoder
 from asteroid.filterbanks import STFTFB
-from asteroid.filterbanks.transforms import take_mag
+from asteroid.filterbanks.transforms import take_mag, to_torchaudio, from_torchaudio
+#from nnAudio import Spectrogram
+#import torch_stft
 
 from . filtering import wiener
 
@@ -386,8 +388,38 @@ class Separator(nn.Module):
         self.stft2 = Encoder(dft_filters)
         idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
         self.istft2 = Decoder(idft_filters)
-
-
+        # vtrad 2
+        """
+        self.stft3 =  Spectrogram.STFT(
+            n_fft=n_fft,
+            freq_bins=None,
+            hop_length=n_hop, 
+            window='hann', 
+            freq_scale='no',
+            center=False, 
+            pad_mode='reflect',
+            trainable=False,
+            device = 'cpu'
+            #output_format='Complex'
+            )
+        self.istft3 = Spectrogram.iSTFT(
+            n_fft=n_fft,
+            hop_length=n_hop,
+            window='hann', 
+            freq_scale='no',
+            center=False,
+            pad_mode='reflect', 
+            trainable=False, 
+            device='cpu')
+        """
+        # vtrad3 
+        """
+        self.stft4 = torch_stft.STFT(
+            filter_length=n_fft, 
+            hop_length=n_hop, 
+            win_length=n_fft,
+            window="hann"
+        )"""
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
         # adding till https://github.com/pytorch/pytorch/issues/38963
@@ -420,19 +452,40 @@ class Separator(nn.Module):
 
         # getting the STFT of mix:
         # (nb_samples, nb_channels, nb_bins, nb_frames, 2)
+        
         # vo
         """
         mix_stft = self.stft(audio)
         X = self.complexnorm(mix_stft)
         """
+        
         # vtrad
-        
-        mix_stft = self.stft2(audio)
-        mix_stft = torch.reshape(mix_stft, (mix_stft.shape[0],mix_stft.shape[1], 2, -1 ,mix_stft.shape[-1]))
-        mix_stft  = mix_stft.permute(0,1,3,4,2)
+        # compute stft
+        mix_stft = self.stft2(audio)*((4096)**(0.5))
+        # cut dimension bins in chunks, gather them along dimension -1
+        mix_stft = to_torchaudio(mix_stft)
         X = self.complexnorm(mix_stft)
+      
+        """
+        # vtrad 2
         
-        
+        #import pdb; pdb.set_trace()
+        #mix_stftL = self.stft3(audio[0,0])
+        #mix_stftR = self.stft3(audio[0,1])
+        #mix_stft = torch.stack((mix_stftL[0], mix_stftR[0]))[None]
+        mix_stft = self.stft3(audio[0])[None]
+        X = self.complexnorm(mix_stft)
+        #import pdb; pdb.set_trace()
+        """
+        """
+        # vtrad 3
+        #import pdb; pdb.set_trace()
+        mag, pha = self.stft4.transform(audio[0])
+        re = mag*torch.cos(pha)
+        im = mag*torch.sin(pha)
+        mix_stft = torch.stack( (re,im), dim=-1 )[None]
+        import pdb; pdb.set_trace()
+        """
 
         # initializing spectrograms variable
         spectrograms = torch.zeros(
@@ -507,12 +560,22 @@ class Separator(nn.Module):
             window=self.stft.window,
             center=self.stft.center,
             length=audio.shape[-1]
-        )"""
-       
+        )
+        """
         # vtrad
-        targets_stft  =  targets_stft.permute(0,1,2,3,5,4)
-        targets_stft = torch.reshape(targets_stft, (targets_stft.shape[0],targets_stft.shape[1],targets_stft.shape[2],-1,targets_stft.shape[-1])  )
+        
+        targets_stft = from_torchaudio(targets_stft)
+        targets_stft = targets_stft / ((4096)**(0.5))
         estimates = self.istft2(targets_stft)
+        
+        # vtrad 2
+        """
+        #import pdb; pdb.set_trace()
+        estimates = self.istft3(targets_stft[0,0])[None,None]
+        import pdb;  pdb.set_trace()
+        """
+        # vtrad 3 : none 
+
         return estimates
 
     def to_dict(
