@@ -371,6 +371,7 @@ class Separator(nn.Module):
         n_fft: int = 4096,
         n_hop: int = 1024,
         nb_channels: int = 2,
+        use_original_umx: bool = False,
         wiener_win_len: Optional[int] = 300
     ):
         super(Separator, self).__init__()
@@ -380,46 +381,15 @@ class Separator(nn.Module):
         self.residual = residual
         self.softmask = softmask
         self.wiener_win_len = wiener_win_len
-        # vo
-        self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)
+        self.use_original_umx = use_original_umx
         self.complexnorm = ComplexNorm(mono=nb_channels == 1)
-        # vtrad
-        dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
-        self.stft2 = Encoder(dft_filters)
-        idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
-        self.istft2 = Decoder(idft_filters)
-        # vtrad 2
-        """
-        self.stft3 =  Spectrogram.STFT(
-            n_fft=n_fft,
-            freq_bins=None,
-            hop_length=n_hop, 
-            window='hann', 
-            freq_scale='no',
-            center=False, 
-            pad_mode='reflect',
-            trainable=False,
-            device = 'cpu'
-            #output_format='Complex'
-            )
-        self.istft3 = Spectrogram.iSTFT(
-            n_fft=n_fft,
-            hop_length=n_hop,
-            window='hann', 
-            freq_scale='no',
-            center=False,
-            pad_mode='reflect', 
-            trainable=False, 
-            device='cpu')
-        """
-        # vtrad3 
-        """
-        self.stft4 = torch_stft.STFT(
-            filter_length=n_fft, 
-            hop_length=n_hop, 
-            win_length=n_fft,
-            window="hann"
-        )"""
+        if self.use_original_umx:
+            self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)   
+        else:
+            dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+            self.stft2 = Encoder(dft_filters)
+            idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+            self.istft2 = Decoder(idft_filters)
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
         # adding till https://github.com/pytorch/pytorch/issues/38963
@@ -452,40 +422,17 @@ class Separator(nn.Module):
 
         # getting the STFT of mix:
         # (nb_samples, nb_channels, nb_bins, nb_frames, 2)
-        
-        # vo
-        """
-        mix_stft = self.stft(audio)
-        X = self.complexnorm(mix_stft)
-        """
-        
-        # vtrad
-        # compute stft
-        mix_stft = self.stft2(audio)*((4096)**(0.5))
-        # cut dimension bins in chunks, gather them along dimension -1
-        mix_stft = to_torchaudio(mix_stft)
-        X = self.complexnorm(mix_stft)
+
+        if self.use_original_umx:
+            mix_stft = self.stft(audio)
+            X = self.complexnorm(mix_stft)
+        else:
+            # compute stft
+            mix_stft = self.stft2(audio)*((4096)**(0.5))
+            # cut dimension bins in chunks, gather them along dimension -1
+            mix_stft = to_torchaudio(mix_stft)
+            X = self.complexnorm(mix_stft)
       
-        """
-        # vtrad 2
-        
-        #import pdb; pdb.set_trace()
-        #mix_stftL = self.stft3(audio[0,0])
-        #mix_stftR = self.stft3(audio[0,1])
-        #mix_stft = torch.stack((mix_stftL[0], mix_stftR[0]))[None]
-        mix_stft = self.stft3(audio[0])[None]
-        X = self.complexnorm(mix_stft)
-        #import pdb; pdb.set_trace()
-        """
-        """
-        # vtrad 3
-        #import pdb; pdb.set_trace()
-        mag, pha = self.stft4.transform(audio[0])
-        re = mag*torch.cos(pha)
-        im = mag*torch.sin(pha)
-        mix_stft = torch.stack( (re,im), dim=-1 )[None]
-        import pdb; pdb.set_trace()
-        """
 
         # initializing spectrograms variable
         spectrograms = torch.zeros(
@@ -544,37 +491,28 @@ class Separator(nn.Module):
                     mix_stft[sample, cur_frame],
                     self.niter,
                     softmask=self.softmask,
-                    residual=self.residual
+                    residual=self.residual,
+                    use_original_umx=self.use_original_umx
                 )
 
         # getting to (nb_samples, nb_targets, channel, fft_size, n_frames, 2)
         targets_stft = targets_stft.permute(0, 5, 3, 2, 1, 4).contiguous()
 
         # inverse STFTs
-        # vo
-        """
-        estimates = istft(
-            targets_stft,
-            n_fft=self.stft.n_fft,
-            n_hop=self.stft.n_hop,
-            window=self.stft.window,
-            center=self.stft.center,
-            length=audio.shape[-1]
-        )
-        """
-        # vtrad
-        
-        targets_stft = from_torchaudio(targets_stft)
-        targets_stft = targets_stft / ((4096)**(0.5))
-        estimates = self.istft2(targets_stft)
-        
-        # vtrad 2
-        """
-        #import pdb; pdb.set_trace()
-        estimates = self.istft3(targets_stft[0,0])[None,None]
-        import pdb;  pdb.set_trace()
-        """
-        # vtrad 3 : none 
+        if self.use_original_umx:
+            estimates = istft(
+                targets_stft,
+                n_fft=self.stft.n_fft,
+                n_hop=self.stft.n_hop,
+                window=self.stft.window,
+                center=self.stft.center,
+                length=audio.shape[-1]
+            )
+        else:
+            targets_stft = from_torchaudio(targets_stft)
+            targets_stft = targets_stft / ((4096)**(0.5))
+            estimates = self.istft2(targets_stft)
+       
 
         return estimates
 

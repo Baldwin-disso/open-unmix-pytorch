@@ -385,7 +385,8 @@ def wiener(
     softmask: bool = False,
     residual: bool = False,
     scale_factor: float = 10.0,
-    eps: float = 1e-10
+    eps: float = 1e-10,
+    use_original_umx: bool = False
 ):
     """Wiener-based separation for multichannel audio.
 
@@ -487,25 +488,32 @@ def wiener(
     else:
         # otherwise, we just multiply the targets spectrograms with mix phase
         # we tacitly assume that we have magnitude estimates.
-        '''
-        #angle = torch.atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
-        angle = my_atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
-        #angle = torch.atan(mix_stft[..., 1]/mix_stft[..., 0])[..., None]
-        nb_sources = targets_spectrograms.shape[-1]
-        y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
-                        device=mix_stft.device)
-        y[..., 0, :] = targets_spectrograms * torch.cos(angle)
-        y[..., 1, :] = targets_spectrograms * torch.sin(angle)
-        '''
-        # Vtrad 
-        mag = (mix_stft[..., 0]**2 + mix_stft[..., 1]**2)**(0.5)
-        cosangle = mix_stft[..., 0] / mag
-        sinangle = mix_stft[..., 1] / mag
-        nb_sources = targets_spectrograms.shape[-1]
-        y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
-                        device=mix_stft.device)
-        y[..., 0, :] = targets_spectrograms * cosangle[...,None]
-        y[..., 1, :] = targets_spectrograms * sinangle[...,None]
+        if use_original_umx:
+            angle = torch.atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
+            nb_sources = targets_spectrograms.shape[-1]
+            y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
+                            device=mix_stft.device)
+            y[..., 0, :] = targets_spectrograms * torch.cos(angle)
+            y[..., 1, :] = targets_spectrograms * torch.sin(angle)
+        else:
+            """
+            #V1
+            angle = my_atan2(mix_stft[..., 1], mix_stft[..., 0])[..., None]
+            nb_sources = targets_spectrograms.shape[-1]
+            y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
+                            device=mix_stft.device)
+            y[..., 0, :] = targets_spectrograms * torch.cos(angle)
+            y[..., 1, :] = targets_spectrograms * torch.sin(angle)
+            """
+            # V2 
+            mag = (mix_stft[..., 0]**2 + mix_stft[..., 1]**2)**(0.5)
+            cosangle = mix_stft[..., 0] / mag
+            sinangle = mix_stft[..., 1] / mag
+            nb_sources = targets_spectrograms.shape[-1]
+            y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
+                            device=mix_stft.device)
+            y[..., 0, :] = targets_spectrograms * cosangle[...,None]
+            y[..., 1, :] = targets_spectrograms * sinangle[...,None]
         
 
 

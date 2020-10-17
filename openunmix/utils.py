@@ -196,7 +196,8 @@ def load_separator(
     residual: bool = False,
     wiener_win_len: Optional[int] = 300,
     device: Union[str, torch.device] = 'cpu',
-    pretrained: bool = True
+    pretrained: bool = True,
+    use_original_umx: bool = False
 ):
     """Separator loader
 
@@ -252,6 +253,7 @@ def load_separator(
             n_fft=enc_conf['nfft'],
             n_hop=enc_conf['nhop'],
             nb_channels=enc_conf['nb_channels'],
+            use_original_umx=use_original_umx
         ).to(device)
 
     # otherwise we load the separator from torchhub

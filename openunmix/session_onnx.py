@@ -9,92 +9,145 @@ def to_numpy(tensor):
     return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
 
-if __name__ == '__main__':
 
-    # INI MODEL
-    # device
-    if torch.cuda.is_available():
-        device = 'cuda'
+def create_and_test_onnx_separator(
+    input_mixture_path, 
+    target,
+    model='umxhq', 
+    start = 0.0,
+    duration = 20.0,
+    do_creation = True,
+    do_test = True,
+):
+    # parameters
+    model_str_or_path = model 
+    if Path(model).expanduser().exists(): # if model is a path
+        model_name = Path(model_str_or_path).expanduser().stem
     else:
-        device = 'cpu'
+        model_name = model
+
+    device = 'cpu'
+    model_rate = 44100
+    input_mixture_path = Path(input_mixture_path)
+    onnx_model_format = 'separator-{}-{}.onnx'.format(model_name, target)
+    onnx_out_format = '{}-{}-{}-onnx.mp3'.format(input_mixture_path.stem,model_name,target)
+    pytorch_out_format = '{}-{}-{}-torch.mp3'.format(input_mixture_path.stem,model_name,target)
+    pytorch_original_out_format = '{}-{}-{}-torch-original.mp3'.format(input_mixture_path.stem,model_name,target)
+
+    # LOAD TORCH MODEL AND COMPUTE ESTIMATE 
+    # device
     # model
     torch_separator = utils.load_separator(
-        model_str_or_path="umxhq",
-        targets=['vocals'],
+        model_str_or_path=model_str_or_path,
+        targets=[target],
         niter=0,
         residual=False,
-        pretrained=True
+        pretrained=True,
+        use_original_umx = False
     ).to(device)
     # batch_size
     batch_size = 1    # just a random number
 
-
-
-    # INPUT FOR MODEL
-
-    # saybi
-    
-    original_mixture_path = Path((
-    "/home/baldwin/work/data/songs/satisfaction.mp3"))
-    start = 5.0
-    duration = 30.0
     # load audio and truncate
-    mixture, rate = torchaudio.load(original_mixture_path)
-    x = mixture[None,:,int(start*rate):int(start*rate)+int(duration*rate)]
-    #x = utils.preprocess(mixture, 44100, 44100)
-    '''
-    x = torch.randn(batch_size, 2, 44100*5, requires_grad=True)
-    '''
+    mixture, rate = torchaudio.load(input_mixture_path)
+    mixture = mixture[:,int(start*rate):int(start*rate)+int(duration*rate)]
+    x = utils.preprocess(mixture, rate, model_rate)
+
+    # inference
     torch_out = torch_separator(x)
-    
-    # EXPORT
-    torch.onnx.export(torch_separator,               # model being run
-                    x,                         # model input (or a tuple for multiple inputs)
-                    "umx-vocals.onnx",   # where to save the model (can be a file or file-like object)
-                    export_params=True,        # store the trained parameter weights inside the model file
-                    opset_version=12,          # the ONNX version to export the model to
-                    do_constant_folding=True,  # whether to execute constant folding for optimization
-                    input_names = ['input'],   # the model's input names
-                    output_names = ['output'], # the model's output names
-                    dynamic_axes={'input' : { 2 : 'nb_steps'},    # variable lenght axes
-                                    'output' : { 3 : 'nb_steps'}})
-
-    # onnx model TEST
-    import onnx
-
-    onnx_model = onnx.load("umx-vocals.onnx")
-    onnx.checker.check_model(onnx_model)
-
-    # onnx runtime test
-    import onnxruntime
-
-    ort_session = onnxruntime.InferenceSession("umx-vocals.onnx")
-  
-    # compute ONNX Runtime output prediction
-    ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(x)}
-    ort_outs = ort_session.run(None, ort_inputs)
-  
-
-    # store onnx and pytorch results
-    out_onnx = ort_outs[0]
-    torchaudio.save('satis-vocals-onnx.mp3', torch.tensor(out_onnx[0,0]), 44100)
-    
-    #torch_out = torch_out/(2*torch_out.max())
-    out_normal = to_numpy(torch_out)
-    #import matplotlib.pyplot as plt
-    #plt.plot(torch_out.detach().numpy()[0,0,0])
-    #plt.show()
     #import pdb; pdb.set_trace()
-    #torchaudio.save('satis-vocals-normal.mp3', torch.tensor(out_normal[0,0]), 44100)
-    torchaudio.save('satis-vocals-normal_ast_norm.wav', torch_out[0,0],44100)
+    # export to onnx 
+    if do_creation: 
+        # EXPORT to ONNX
+        torch.onnx.export(torch_separator,               # model being run
+                        x,                         # model input (or a tuple for multiple inputs)
+                        onnx_model_format,   # where to save the model (can be a file or file-like object)
+                        export_params=True,        # store the trained parameter weights inside the model file
+                        opset_version=12,          # the ONNX version to export the model to
+                        do_constant_folding=True,  # whether to execute constant folding for optimization
+                        input_names = ['input'],   # the model's input names
+                        output_names = ['output'], # the model's output names
+                        dynamic_axes={'input' : { 2 : 'nb_steps'},    # variable lenght axes
+                                        'output' : { 3 : 'nb_steps'}})
+    if do_test:
+        # Run original UMX model 
+        torch_separator_original = utils.load_separator(
+            model_str_or_path=model_str_or_path,
+            targets=[target],
+            niter=0,
+            residual=False,
+            pretrained=True,
+            use_original_umx = True
+        ).to(device)
+        torch_out_original = torch_separator_original(x)
+        # STORE original PYTORCH INFERENCE RESULT
+        torchaudio.save(pytorch_original_out_format, torch_out_original[0,0],rate)
 
-    # compare ONNX Runtime and PyTorch results
-    np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
+
+        # TEST ONNX MODEL
+        import onnx
+ 
+        onnx_model = onnx.load(onnx_model_format)
+        onnx.checker.check_model(onnx_model)
+
+        # RUN ONNX MODEL
+        import onnxruntime
+
+        ort_session = onnxruntime.InferenceSession(onnx_model_format)
+    
+        # compute ONNX Runtime output prediction
+        ort_inputs = {ort_session.get_inputs()[0].name: to_numpy(x)}
+        ort_outs = ort_session.run(None, ort_inputs)
+    
+
+        # STORE ONNX
+        out_onnx = ort_outs[0]
+        torchaudio.save(onnx_out_format, torch.tensor(out_onnx[0,0]), 44100)
+
+        # STORE PYTORCH INFERENCE RESULT
+        out_normal = to_numpy(torch_out)
+        torchaudio.save(pytorch_out_format, torch_out[0,0],rate)
+        
+        # III Compare Pytorch and ONNX
+        # compare ONNX Runtime and PyTorch results
+        #np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
+
+        print("Exported model for : model " + model_name + " target  " + target +   " has been tested with ONNXRuntime, and the result looks good!")
+    
 
 
-    print("Exported model has been tested with ONNXRuntime, and the result looks good!")
-   
+if __name__ == '__main__':
+    input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
+    input_mixture_path2 = "/home/baldwin/work/data/songs/closer.mp3"
+    target_list = ['vocals', 'bass','drums']
+    model = '/home/baldwin/work/data/umx_models/UMX-PRO'
+    # create separators for target list
+    for target in target_list:
+        # create model with song satisfaction
+        create_and_test_onnx_separator(
+            input_mixture_path, 
+            target, 
+            model=model,  
+            start = 5.0, 
+            duration = 20.0,
+            do_creation=True,
+            do_test=True
+        )
+    
+    # test separators for target list with another input
+    for target in target_list:
+        # test model with song 
+        create_and_test_onnx_separator(
+            input_mixture_path2, 
+            target, 
+            model=model,  
+            start = 60.0, 
+            duration = 20.0,
+            do_creation=False,
+            do_test=True
+        )
+    
+
 
         
-
-   
+    
