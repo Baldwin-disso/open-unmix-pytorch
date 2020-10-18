@@ -4,9 +4,13 @@ import predict
 import torch
 import utils
 import numpy as np
+import torch.nn as nn
 
 def to_numpy(tensor):
     return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+
+
 
 
 
@@ -29,7 +33,7 @@ def create_and_test_onnx_separator(
     device = 'cpu'
     model_rate = 44100
     input_mixture_path = Path(input_mixture_path)
-    onnx_model_format = 'separator-{}-{}.onnx'.format(model_name, target)
+    onnx_model_format = 'separator-{}-{}-{}sec.onnx'.format(model_name, target, duration)
     onnx_out_format = '{}-{}-{}-onnx.mp3'.format(input_mixture_path.stem,model_name,target)
     pytorch_out_format = '{}-{}-{}-torch.mp3'.format(input_mixture_path.stem,model_name,target)
     pytorch_original_out_format = '{}-{}-{}-torch-original.mp3'.format(input_mixture_path.stem,model_name,target)
@@ -117,6 +121,7 @@ def create_and_test_onnx_separator(
 
 
 if __name__ == '__main__':
+    # EXPORT AND TEST SEPARATOR FOR ONNX
     input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
     input_mixture_path2 = "/home/baldwin/work/data/songs/closer.mp3"
     target_list = ['vocals', 'bass','drums']
@@ -146,8 +151,6 @@ if __name__ == '__main__':
             do_creation=False,
             do_test=True
         )
-    
-
 
         
     
