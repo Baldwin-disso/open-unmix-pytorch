@@ -11,33 +11,19 @@ import numpy as np
 # Define basic complex operations on torch.Tensor objects whose last dimension
 # consists in the concatenation of the real and imaginary parts.
 
-"""
-def my_atan2(y,x):
-    
-    # v where
-    
-    yis0 = torch.where(y==0)    
-    res = 2 * torch.atan( y / ( (x**2 + y**2 )**(0.5) + x ) ) 
-    res[yis0] = math.pi
-    '''
-    # v non zeros
-    ynonzero = torch.nonzero(y, as_tuple = True)
-    res = math.pi * torch.ones(y.shape, device = y.device )
-    res[ynonzero] = 2 * torch.atan( y[ynonzero] / ( (x[ynonzero]**2 + y[ynonzero]**2 )**(0.5) + x[ynonzero] ) ) 
-    '''
-    return res
-"""
 
 def my_atan2(y, x):
     pi = torch.from_numpy(np.array([np.pi])).to(y.device, y.dtype)
+    x +=  ((x==0) & (y==0)) *  1.0 
     ans = torch.atan(y / x)
-    ans += ((y > 0) & (x < 0)) * pi
+    ans += ((y >= 0) & (x < 0)) * pi
     ans -= ((y < 0) & (x < 0)) * pi
     ans *= (1 - ((y > 0) & (x == 0)) * 1.0)
     ans += ((y > 0) & (x == 0)) * (pi / 2)
     ans *= (1 - ((y < 0) & (x == 0)) * 1.0)
     ans += ((y < 0) & (x == 0)) * (-pi / 2)
     return ans
+
 
 
 def _norm(x: torch.Tensor) -> torch.Tensor:
@@ -517,17 +503,7 @@ def wiener(
                             device=mix_stft.device)
             y[..., 0, :] = targets_spectrograms * torch.cos(angle)
             y[..., 1, :] = targets_spectrograms * torch.sin(angle)
-            """
-            # V2 
-            mag = (mix_stft[..., 0]**2 + mix_stft[..., 1]**2)**(0.5)
-            cosangle = mix_stft[..., 0] / mag
-            sinangle = mix_stft[..., 1] / mag
-            nb_sources = targets_spectrograms.shape[-1]
-            y = torch.zeros(mix_stft.shape + (nb_sources,), dtype=mix_stft.dtype,
-                            device=mix_stft.device)
-            y[..., 0, :] = targets_spectrograms * cosangle[...,None]
-            y[..., 1, :] = targets_spectrograms * sinangle[...,None]
-            """
+          
 
 
     if residual:
