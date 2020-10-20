@@ -23,6 +23,7 @@ def create_and_test_onnx_separator(
     do_creation = True,
     do_test = True,
 ):
+    
     # parameters
     model_str_or_path = model 
     if Path(model).expanduser().exists(): # if model is a path
@@ -33,7 +34,7 @@ def create_and_test_onnx_separator(
     device = 'cpu'
     model_rate = 44100
     input_mixture_path = Path(input_mixture_path)
-    onnx_model_format = 'separator-{}-{}-{}sec.onnx'.format(model_name, target, duration)
+    onnx_model_format = 'separator-{}-{}-{}sec.onnx'.format(model_name, target, int(duration))
     onnx_out_format = '{}-{}-{}-onnx.mp3'.format(input_mixture_path.stem,model_name,target)
     pytorch_out_format = '{}-{}-{}-torch.mp3'.format(input_mixture_path.stem,model_name,target)
     pytorch_original_out_format = '{}-{}-{}-torch-original.mp3'.format(input_mixture_path.stem,model_name,target)
@@ -87,7 +88,7 @@ def create_and_test_onnx_separator(
         # STORE original PYTORCH INFERENCE RESULT
         torchaudio.save(pytorch_original_out_format, torch_out_original[0,0],rate)
 
-
+        #import pdb; pdb.set_trace()
         # TEST ONNX MODEL
         import onnx
  
@@ -112,21 +113,26 @@ def create_and_test_onnx_separator(
         out_normal = to_numpy(torch_out)
         torchaudio.save(pytorch_out_format, torch_out[0,0],rate)
         
+        import pdb; pdb.set_trace()
         # III Compare Pytorch and ONNX
         # compare ONNX Runtime and PyTorch results
-        #np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
-
+        np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
+        print("onnx out and torch out are equals ! ")
+        np.testing.assert_allclose(to_numpy(torch_out), to_numpy(torch_out_original) , rtol=1e-03, atol=1e-05)
+        print("torch out  and original torch out are equals ! ")
         print("Exported model for : model " + model_name + " target  " + target +   " has been tested with ONNXRuntime, and the result looks good!")
     
 
 
 if __name__ == '__main__':
     # EXPORT AND TEST SEPARATOR FOR ONNX
-    input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
-    input_mixture_path2 = "/home/baldwin/work/data/songs/closer.mp3"
+    #input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
+    input_mixture_path = "/home/baldwin/work/data/songs/closer.mp3"
     target_list = ['vocals', 'bass','drums']
-    model = '/home/baldwin/work/data/umx_models/UMX-PRO'
+    #model = '/home/baldwin/work/data/umx_models/UMX-PRO'
+    model = 'umxhq'
     # create separators for target list
+    
     for target in target_list:
         # create model with song satisfaction
         create_and_test_onnx_separator(
@@ -138,7 +144,7 @@ if __name__ == '__main__':
             do_creation=True,
             do_test=True
         )
-    
+    """
     # test separators for target list with another input
     for target in target_list:
         # test model with song 
@@ -151,6 +157,9 @@ if __name__ == '__main__':
             do_creation=False,
             do_test=True
         )
+    """
+    
+    
 
         
     

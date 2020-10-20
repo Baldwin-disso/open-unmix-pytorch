@@ -427,7 +427,7 @@ class Separator(nn.Module):
             mix_stft = self.stft(audio)
             X = self.complexnorm(mix_stft)
         else:
-            # compute stft
+            # compute simport pdb; pdb.set_trace()tft
             mix_stft = self.stft2(audio)*((4096)**(0.5))
             # cut dimension bins in chunks, gather them along dimension -1
             mix_stft = to_torchaudio(mix_stft)
