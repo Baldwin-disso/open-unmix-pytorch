@@ -50,6 +50,7 @@ def create_and_test_onnx_separator(
         pretrained=True,
         use_original_umx = False
     ).to(device)
+    torch_separator.freeze()
     # batch_size
     batch_size = 1    # just a random number
 
@@ -84,6 +85,7 @@ def create_and_test_onnx_separator(
             pretrained=True,
             use_original_umx = True
         ).to(device)
+        torch_separator_original.freeze()
         torch_out_original = torch_separator_original(x)
         # STORE original PYTORCH INFERENCE RESULT
         torchaudio.save(pytorch_original_out_format, torch_out_original[0,0],rate)
@@ -113,7 +115,7 @@ def create_and_test_onnx_separator(
         out_normal = to_numpy(torch_out)
         torchaudio.save(pytorch_out_format, torch_out[0,0],rate)
         
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         # III Compare Pytorch and ONNX
         # compare ONNX Runtime and PyTorch results
         np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
@@ -126,8 +128,8 @@ def create_and_test_onnx_separator(
 
 if __name__ == '__main__':
     # EXPORT AND TEST SEPARATOR FOR ONNX
-    #input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
-    input_mixture_path = "/home/baldwin/work/data/songs/closer.mp3"
+    input_mixture_path = "/home/baldwin/work/data/songs/satisfaction.mp3"
+    input_mixture_path2 = "/home/baldwin/work/data/songs/closer.mp3"
     target_list = ['vocals', 'bass','drums']
     #model = '/home/baldwin/work/data/umx_models/UMX-PRO'
     model = 'umxhq'
@@ -139,12 +141,12 @@ if __name__ == '__main__':
             input_mixture_path, 
             target, 
             model=model,  
-            start = 5.0, 
-            duration = 20.0,
+            start = 10.0, 
+            duration = 5.0,
             do_creation=True,
             do_test=True
         )
-    """
+    
     # test separators for target list with another input
     for target in target_list:
         # test model with song 
@@ -157,7 +159,7 @@ if __name__ == '__main__':
             do_creation=False,
             do_test=True
         )
-    """
+    
     
     
 

@@ -25,7 +25,7 @@ def separate_and_evaluate(
     device: Union[str, torch.device] = 'cpu',
     wiener_win_len: Optional[int] = None
 ) -> str:
-
+    
     separator = utils.load_separator(
         model_str_or_path=model_str_or_path,
         targets=targets,

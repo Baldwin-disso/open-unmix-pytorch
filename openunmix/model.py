@@ -383,13 +383,13 @@ class Separator(nn.Module):
         self.wiener_win_len = wiener_win_len
         self.use_original_umx = use_original_umx
         self.complexnorm = ComplexNorm(mono=nb_channels == 1)
-        if self.use_original_umx:
-            self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)   
-        else:
-            dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
-            self.stft2 = Encoder(dft_filters)
-            idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
-            self.istft2 = Decoder(idft_filters)
+        
+        
+        self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)   
+        dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        self.stft2 = Encoder(dft_filters)
+        idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        self.istft2 = Decoder(idft_filters)
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
         # adding till https://github.com/pytorch/pytorch/issues/38963
@@ -427,12 +427,18 @@ class Separator(nn.Module):
             mix_stft = self.stft(audio)
             X = self.complexnorm(mix_stft)
         else:
-            # compute simport pdb; pdb.set_trace()tft
+            # compute stft
             mix_stft = self.stft2(audio)*((4096)**(0.5))
+            """
             # cut dimension bins in chunks, gather them along dimension -1
+            mix_stft_padded = torch.zeros(mix_stft.shape[:3] + (mix_stft.shape[3] + 4,) )
+            mix_stft_padded[..., :2 ] = mix_stft[..., :2 ]
+            mix_stft_padded[..., -2: ] = mix_stft[..., -2: ]
+            mix_stft_padded[..., 2:-2 ] = mix_stft """
+
             mix_stft = to_torchaudio(mix_stft)
             X = self.complexnorm(mix_stft)
-      
+
 
         # initializing spectrograms variable
         spectrograms = torch.zeros(

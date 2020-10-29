@@ -243,7 +243,7 @@ def load_separator(
 
         with open(Path(model_path, 'separator.json'), 'r') as stream:
             enc_conf = json.load(stream)
-
+      
         separator = model.Separator(
             target_models=target_models,
             niter=niter,
