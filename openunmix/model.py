@@ -7,7 +7,7 @@ import torchaudio
 from torch import Tensor
 from torch.nn import LSTM, BatchNorm1d, Linear, Parameter
 from asteroid.filterbanks.enc_dec import Filterbank, Encoder, Decoder
-from asteroid.filterbanks import STFTFB
+from . stft_fb2 import STFTFB2
 from asteroid.filterbanks.transforms import take_mag, to_torchaudio, from_torchaudio
 #from nnAudio import Spectrogram
 #import torch_stft
@@ -129,7 +129,7 @@ def istft(
 
 
 class ComplexNorm(nn.Module):
-    r"""Compute the norm of complex tensor input.
+    """Compute the norm of complex tensor input.
 
     Extension of `torchaudio.functional.complex_norm` with mono
 
@@ -386,9 +386,19 @@ class Separator(nn.Module):
         
         
         self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)   
-        dft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        dft_filters = STFTFB2(n_filters=n_fft,
+            kernel_size=n_fft, 
+            stride=n_hop, 
+            sample_rate=44100,
+            window= torch.hann_window(n_fft).numpy() 
+        )
         self.stft2 = Encoder(dft_filters)
-        idft_filters = STFTFB(n_filters=n_fft, kernel_size=n_fft, stride=n_hop)
+        idft_filters = STFTFB2(n_filters=n_fft,
+            kernel_size=n_fft, 
+            stride=n_hop, 
+            sample_rate=44100,
+            window= torch.hann_window(n_fft).numpy() 
+        )
         self.istft2 = Decoder(idft_filters)
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
@@ -428,7 +438,7 @@ class Separator(nn.Module):
             X = self.complexnorm(mix_stft)
         else:
             # compute stft
-            mix_stft = self.stft2(audio)*((4096)**(0.5))
+            mix_stft = self.stft2(audio)*((4096**0.5))
             """
             # cut dimension bins in chunks, gather them along dimension -1
             mix_stft_padded = torch.zeros(mix_stft.shape[:3] + (mix_stft.shape[3] + 4,) )
@@ -438,6 +448,15 @@ class Separator(nn.Module):
 
             mix_stft = to_torchaudio(mix_stft)
             X = self.complexnorm(mix_stft)
+
+            
+            mix_stftVO = self.stft(audio)
+            XVO = self.complexnorm(mix_stftVO)
+            besh = (X - XVO[...,2:-2]) / X
+            import matplotlib.pyplot as plt
+            plt.plot(besh[0,0,:,0]); plt.show()
+            import pdb; pdb.set_trace()
+            
 
 
         # initializing spectrograms variable
@@ -514,10 +533,12 @@ class Separator(nn.Module):
                 center=self.stft.center,
                 length=audio.shape[-1]
             )
+            import pdb; pdb.set_trace()
         else:
             targets_stft = from_torchaudio(targets_stft)
-            targets_stft = targets_stft / ((4096)**(0.5))
+            targets_stft = targets_stft / (4096**0.5)
             estimates = self.istft2(targets_stft)
+            
        
 
         return estimates
