@@ -9,6 +9,7 @@ from torch.nn import LSTM, BatchNorm1d, Linear, Parameter
 from asteroid.filterbanks.enc_dec import Filterbank, Encoder, Decoder
 from . stft_fb2 import STFTFB2
 from asteroid.filterbanks.transforms import take_mag, to_torchaudio, from_torchaudio
+from asteroid_filterbanks import torch_stft_fb
 #from nnAudio import Spectrogram
 #import torch_stft
 
@@ -33,7 +34,8 @@ class STFT(nn.Module):
         self,
         n_fft=4096,
         n_hop=1024,
-        center=False
+        center=False,
+        use_asteroid = True
     ):
         super(STFT, self).__init__()
         self.window = nn.Parameter(
@@ -43,6 +45,22 @@ class STFT(nn.Module):
         self.n_fft = n_fft
         self.n_hop = n_hop
         self.center = center
+
+        # alt with asteroid
+        self.use_asteroid = use_asteroid
+        if use_asteroid :
+            dft_filters3 = torch_stft_fb.TorchSTFTFB(
+                        n_filters=n_fft,
+                        kernel_size=n_fft,
+                        stride=n_hop,
+                        window=torch.hann_window(n_fft).numpy(),
+                        center=center,
+                        pad_mode="reflect",
+                        normalized=False,
+                        onesided=True,
+                        sample_rate=44100.0,
+                    )
+            self.stft3 = Encoder(dft_filters3)
 
     def forward(self, x: Tensor) -> Tensor:
         """STFT forward path
@@ -59,22 +77,26 @@ class STFT(nn.Module):
         shape = x.size()
         nb_samples, nb_channels, nb_timesteps = shape
 
-        # pack batch
-        x = x.view(-1, shape[-1])
+        if self.use_asteroid:
+            aux = self.stft3(x)
+            stft_f = to_torchaudio(aux)
+        else :
+            # pack batch
+            x = x.view(-1, shape[-1])
 
-        stft_f = torch.stft(
-            x,
-            n_fft=self.n_fft,
-            hop_length=self.n_hop,
-            window=self.window,
-            center=self.center,
-            normalized=False,
-            onesided=True,
-            pad_mode='reflect'
-        )
+            stft_f = torch.stft(
+                x,
+                n_fft=self.n_fft,
+                hop_length=self.n_hop,
+                window=self.window,
+                center=self.center,
+                normalized=False,
+                onesided=True,
+                pad_mode='reflect'
+            )
 
-        # unpack batch
-        stft_f = stft_f.view(shape[:-1] + stft_f.shape[-3:])
+            # unpack batch
+            stft_f = stft_f.view(shape[:-1] + stft_f.shape[-3:])
         return stft_f
 
 
@@ -85,6 +107,7 @@ def istft(
     center: bool = False,
     window: Optional[Tensor] = None,
     length: Optional[int] = None,
+    use_asteroid: bool = True,
 ):
     """Multichannel Inverse-Short-Time-Fourier functional
     wrapper for torch.istft to support batches
@@ -108,23 +131,36 @@ def istft(
             shape (nb_samples, nb_channels, nb_timesteps)
 
     """
+    if use_asteroid:
+        idft_filters3 = torch_stft_fb.TorchSTFTFB(
+            n_filters=n_fft,
+            kernel_size=n_fft,
+            stride=n_hop,
+            window=torch.hann_window(n_fft).numpy(),
+            center=center,
+            pad_mode="reflect",
+            normalized=False,
+            onesided=True,
+            sample_rate=44100.0,
+        )
+        istft3 = Decoder(idft_filters3)
+        aux = from_torchaudio(X)
+        y = istft3(aux)
+    else:
+        shape = X.size()
+        X = X.reshape(-1, shape[-3], shape[-2], shape[-1])
 
-    shape = X.size()
-    X = X.reshape(-1, shape[-3], shape[-2], shape[-1])
-
-    y = torch.istft(
-        X,
-        n_fft=n_fft,
-        hop_length=n_hop,
-        window=window,
-        center=center,
-        normalized=False,
-        onesided=True,
-        length=length
-    )
-
-    y = y.reshape(shape[:-3] + y.shape[-1:])
-
+        y = torch.istft(
+            X,
+            n_fft=n_fft,
+            hop_length=n_hop,
+            window=window,
+            center=center,
+            normalized=False,
+            onesided=True,
+            length=length
+        )
+        y = y.reshape(shape[:-3] + y.shape[-1:])
     return y
 
 
@@ -385,7 +421,9 @@ class Separator(nn.Module):
         self.complexnorm = ComplexNorm(mono=nb_channels == 1)
         
         
-        self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)   
+        self.stft = STFT(n_fft=n_fft, n_hop=n_hop, center=True)  
+ 
+        # old
         dft_filters = STFTFB2(n_filters=n_fft,
             kernel_size=n_fft, 
             stride=n_hop, 
@@ -400,6 +438,37 @@ class Separator(nn.Module):
             window= torch.hann_window(n_fft).numpy() 
         )
         self.istft2 = Decoder(idft_filters)
+
+        # new asteroid stft
+        
+
+
+
+        dft_filters3 = torch_stft_fb.TorchSTFTFB(
+                    n_filters=n_fft,
+                    kernel_size=n_fft,
+                    stride=n_hop,
+                    window=torch.hann_window(n_fft).numpy(),
+                    center=True,
+                    pad_mode="reflect",
+                    normalized=False,
+                    onesided=True,
+                    sample_rate=44100.0,
+                )
+        idft_filters3 = torch_stft_fb.TorchSTFTFB(
+            n_filters=n_fft,
+            kernel_size=n_fft,
+            stride=n_hop,
+            window=torch.hann_window(n_fft).numpy(),
+            center=True,
+            pad_mode="reflect",
+            normalized=False,
+            onesided=True,
+            sample_rate=44100.0,
+        )
+        self.stft3 = Encoder(dft_filters3)
+        self.istft3 = Decoder(idft_filters3)
+
         # registering the targets models
         self.target_models = nn.ModuleDict(target_models)
         # adding till https://github.com/pytorch/pytorch/issues/38963
@@ -437,27 +506,34 @@ class Separator(nn.Module):
             mix_stft = self.stft(audio)
             X = self.complexnorm(mix_stft)
         else:
-            # compute stft
-            mix_stft = self.stft2(audio)*((4096**0.5))
-            """
-            # cut dimension bins in chunks, gather them along dimension -1
-            mix_stft_padded = torch.zeros(mix_stft.shape[:3] + (mix_stft.shape[3] + 4,) )
-            mix_stft_padded[..., :2 ] = mix_stft[..., :2 ]
-            mix_stft_padded[..., -2: ] = mix_stft[..., -2: ]
-            mix_stft_padded[..., 2:-2 ] = mix_stft """
-
-            mix_stft = to_torchaudio(mix_stft)
-            X = self.complexnorm(mix_stft)
-
             
+            # compute original SFTT
             mix_stftVO = self.stft(audio)
             XVO = self.complexnorm(mix_stftVO)
-            besh = (X - XVO[...,2:-2]) / X
+            # old stft
+            mix_stft2 = self.stft2(audio)
+            mix_stft2 = to_torchaudio(mix_stft2)
+            X2 = self.complexnorm(mix_stft2)
+            # compute new asteroid stft
+            mix_stft3 = self.stft3(audio)
+            mix_stft3 = to_torchaudio(mix_stft3)
+            X3 = self.complexnorm(mix_stft3)
+
+            """
+            diff_3VO = (X3 - XVO[...,2:-2]) / X3
+            diff_2VO = (X2 - XVO[...,2:-2]) / X3
+            diff_2_3 = (X3 - X2) / X3
+            """
+            """
             import matplotlib.pyplot as plt
-            plt.plot(besh[0,0,:,0]); plt.show()
-            import pdb; pdb.set_trace()
+            plt.figure(0), plt.plot(diff_3VO[0,0,:,0]); 
+            plt.figure(1), plt.plot(diff_2VO[0,0,:,0]); 
+            plt.figure(2), plt.plot(diff_2_3[0,0,:,0]); plt.show()
+            """
             
 
+            mix_stft = mix_stftVO
+            X = XVO
 
         # initializing spectrograms variable
         spectrograms = torch.zeros(
@@ -535,12 +611,47 @@ class Separator(nn.Module):
             )
             import pdb; pdb.set_trace()
         else:
-            targets_stft = from_torchaudio(targets_stft)
-            targets_stft = targets_stft / (4096**0.5)
-            estimates = self.istft2(targets_stft)
             
-       
+            estimates1 = istft(
+                targets_stft,
+                n_fft=self.stft.n_fft,
+                n_hop=self.stft.n_hop,
+                window=self.stft.window,
+                center=self.stft.center,
+                length=audio.shape[-1]
+            )
+            """
+            aux2 = from_torchaudio(targets_stft)
+            aux2 = aux2 / (4096**0.5)
+            estimates2 = self.istft2(aux2)
 
+            aux3 = from_torchaudio(targets_stft)
+            estimates3 = self.istft3(aux3)
+            """
+            # unnormalized
+            """
+            import matplotlib.pyplot as plt
+            print("unormalized")
+            plt.figure(0)
+            plt.plot(estimates2[0,0,0]) 
+            plt.figure(1) 
+            plt.plot(estimates3[0,0,0]) 
+            plt.show()
+            import pdb; pdb.set_trace()
+            # normalized
+            print("normalized")
+            estimates2 = estimates2/estimates2.abs().max()
+            estimates3 = estimates3/estimates3.abs().max()
+            plt.figure(0)
+            plt.plot(estimates2[0,0,0]) 
+            plt.figure(1) 
+            plt.plot(estimates3[0,0,0]) 
+            plt.show()
+            import pdb; pdb.set_trace()
+            """
+            
+            estimates = estimates1
+            
         return estimates
 
     def to_dict(

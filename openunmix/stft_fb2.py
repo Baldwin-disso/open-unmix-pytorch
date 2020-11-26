@@ -59,7 +59,7 @@ class STFTFB2(Filterbank):
         filters = torch.from_numpy(filters * self.window).unsqueeze(1).float()
         self.register_buffer("_filters", filters)
 
-    @property
+    #@property
     def filters(self):
         return self._filters
 
